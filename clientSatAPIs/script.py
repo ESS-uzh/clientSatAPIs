@@ -1,40 +1,42 @@
+import datatime
 import geopandas as gpd
 import utils as ut
-import httpvbs as hv
-from planet_api import *
+import planet_api as pa
 
 # * example script #
 
+# Set filters
+date_filter = {
+    "type": "DateRangeFilter", # Type of filter -> Date Range
+    "field_name": "acquired",
+    "config": {
+        "gt": "2019-12-01T00:00:00.000Z",
+    }
+}
+
+cloud_filter = {
+    "type": "RangeFilter",
+    "field_name": "cloud_cover",
+    "config": {
+        "lte": 0.1,
+    }
+}
+# Load polygons
+g = gpd.read_file('../../Maria_Charcoal/studyvillages_WGS84.shx')
+geoms = g['geometry'].values
+shapesList = [ut.shapeToDict(i) for i in geoms]
+
+
 if __name__ == "__main__":
 
-    s = initSession()
-    res = hv.buildGetRequest(s, URL)
+    s = pa.initSession()
+    res_get = s.get(pa.URL)
     # Print the value of the item-types key from _links
-    print(res.json()["_links"]["item-types"])
+    print(res_get.json()["_links"]["item-types"])
 
-
-    date_filter = {
-        "type": "DateRangeFilter", # Type of filter -> Date Range
-        "field_name": "acquired",
-        "config": {
-            "gt": "2019-12-01T00:00:00.000Z",
-        }
-    }
-
-    cloud_filter = {
-        "type": "RangeFilter",
-        "field_name": "cloud_cover",
-        "config": {
-            "lte": 0.1,
-        }
-    }
-    # Load polygons
-    g = gpd.read_file('../../Maria_Charcoal/studyvillages_WGS84.shx')
-    geoms = g.geometry.values
-    shapesList = [ut.shapeToDict(i) for i in geoms]
-
+#
     geoJsons = []
-    for shape in shapesList[:3]:
+    for shape in shapesList:
         geo_filter = {
             "type": "GeometryFilter",
             "field_name": "geometry",
@@ -49,11 +51,12 @@ if __name__ == "__main__":
 
         # Construct the request.
         request = {
-                "item_types": item_types,
+                "item_types": pa.item_types,
                 "filter": and_filter
                         }
 
-        geoJsons.append(hv.buildPostRequest(s, quick_url, request).json())
+        res_post = s.post(pa.quick_url, json=request)
+        geoJsons.append(res_post.json())
 
 
     #printItems(geoJsons)

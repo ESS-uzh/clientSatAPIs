@@ -1,3 +1,4 @@
+import os
 from shapely.geometry import mapping
 import json
 
@@ -22,3 +23,14 @@ def shapeToDict(shapeObj):
         coordTwoD = [[i[:2] for i in d['coordinates'][0]]]
         return {"type": "Polygon", 'coordinates': coordTwoD}
     return d
+
+
+def writeJson(obj, outdir, filename):
+    fpath = os.path.join(outdir, filename)
+    with open(fpath, 'w') as outfile:
+        json.dump(obj, outfile)
+
+
+def readJson(fpath):
+    with open(fpath) as json_file:
+        return json.load(json_file)
