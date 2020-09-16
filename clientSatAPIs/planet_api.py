@@ -3,6 +3,8 @@ import requests
 import time
 import os
 
+import pdb
+
 # * Client code to interact with the Planet API * #
 
 # Setup Planet Data API base URL
@@ -38,6 +40,36 @@ def getFeatureAssets(s, assetsUrl):
     return res
 
 
+def getAssetUrl(feature):
+    """
+    Return the assets URL
+
+    params:
+        feature -> a feature
+    """
+    return feature["_links"]["assets"]
+
+def getAssets(s, assetUrl):
+    """
+    Return the assets
+
+    params:
+        feature -> a feature
+    """
+    res = s.get(assetUrl)
+    return res.json()
+
+
+def getActivationUrl(assetType):
+    """
+    Return the activation URL for an asset
+
+    params:
+        assetType -> e.g. ortho_visual
+    """
+    return assetType["_links"]["activate"]
+
+
 def activateAsset(s, activationUrl):
     res = s.get(activationUrl)
     if res == 202:
@@ -62,9 +94,12 @@ def _backoff(s, url):
     return res
 
 
-def isAssetActive(s, assetsUrl, assetType):
+def getActiveAssetUrl(s, assetsUrl, assetType):
     assetActivated = False
+    count = 0
     while assetActivated == False:
+        if count > 24:
+            return
         res = getFeatureAssets(s, assetsUrl)
         assets = res.json()
 
@@ -75,15 +110,31 @@ def isAssetActive(s, assetsUrl, assetType):
             assetActivated = True
             print("Asset is active and ready to download")
         else:
-            print("Not yet activated, sleeping for two seconds..")
-            time.sleep(2)
+            print("Not yet activated, sleeping for five seconds..")
+            time.sleep(5)
+            count += 1
 
     return assets[assetType]["location"]
 
 
+def getAssetLocation(s, feature):
+    # get asset url
+    assetsUrl = getAssetUrl(feature)
+    assets = getAssets(s, assetsUrl)
+    
+    # choose ortho_visual type and get its url
+    activationUrl = getActivationUrl(assets['ortho_visual'])
+    
+    # activate asset
+    res = activateAsset(s, activationUrl)
+
+    # get asset url location
+    return getActiveAssetUrl(s, assetsUrl, "ortho_visual")
+
+
 def downloadAsset(assetLocationUrl, outdir, filename=None):
     # Send a GET request to the provided location url, using your API Key for authentication
-    res = requests.get(assetLocationUrl, stream=True, auth=(os.environ['PLANET_API_KEY']))
+    res = requests.get(assetLocationUrl, stream=True, auth=(os.environ['PL_API_KEY'],""))
     # If no filename argument is given
     if not filename:
         # Construct a filename from the API response
@@ -94,7 +145,7 @@ def downloadAsset(assetLocationUrl, outdir, filename=None):
             filename = assetLocationUrl.split("=")[1][:10]
     fpath = os.path.join(outdir, filename)
     # Save the file
-    with open('output/' + fpath, "wb") as f:
+    with open(fpath, "wb") as f:
         for chunk in res.iter_content(chunk_size=1024):
             if chunk: # filter out keep-alive new chunks
                 f.write(chunk)
@@ -103,7 +154,38 @@ def downloadAsset(assetLocationUrl, outdir, filename=None):
     return fpath
 
 
+
+
 # -- Parse Features of a  quick-search response -
+
+
+def getUniqueFeatures(geoJsons):
+    finalFeaturesIds = []
+    finalFeatures = []
+    for item in geoJsons:
+        for f in getFeatures(item):
+            if getFeatureId(f) in finalFeaturesIds:
+                print(f"Feature: {getFeatureId(f)} already added, skipping..")
+                continue
+            finalFeaturesIds.append(getFeatureId(f))
+            finalFeatures.append(f)
+    return finalFeatures
+
+def getSelectedFeatures(geoJsons, featuresIds):
+    finalFeatures = []
+    for item in geoJsons:
+        for f in getFeatures(item):
+            count = 0
+            while count < len(featuresIds):
+                if getFeatureId(f) == featuresIds[count]:
+                    print(f"found matching feature {getFeatureId(f)}")
+                    finalFeatures.append(f)
+                    count += 1
+                else:
+                    count +=1
+                    continue
+    return finalFeatures
+
 
 def getFeatures(geoJson):
     """
@@ -206,24 +288,6 @@ def getFeatureId(feature):
     return feature["id"]
 
 
-def getAssetUrl(feature):
-    """
-    Return the assets URL of a feature
-
-    params:
-        feature -> a feature
-    """
-    return feature["_links"]["assets"]
-
-
-def getActivationUrl(assetType):
-    """
-    Return the activation URL of an asset type
-
-    params:
-        feature -> a feature
-    """
-    return assetType["_links"]["activate"]
 
 
 def printItems(geoJsons):
@@ -243,3 +307,5 @@ def printItems(geoJsons):
         print("Total items: {}".format(count))
         print("===== End item =====")
         print("")
+
+
