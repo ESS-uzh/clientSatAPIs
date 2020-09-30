@@ -18,7 +18,8 @@ date_filter = {
     "type": "DateRangeFilter", # Type of filter -> Date Range
     "field_name": "acquired",
     "config": {
-        "gt": "2020-08-01T00:00:00.000Z",
+        "gt": "2020-07-01T00:00:00.000Z",
+        "lte": "2020-08-01T00:00:00.000Z",
     }
 }
 
@@ -26,7 +27,7 @@ cloud_filter = {
     "type": "RangeFilter",
     "field_name": "cloud_cover",
     "config": {
-        "lte": 0.1,
+        "lte": 20,
     }
 }
 download_filter = {
@@ -54,7 +55,7 @@ def quick_search(s, shapesList):
         # Setup an "AND" logical filter
         and_filter = {
                 "type": "AndFilter",
-                "config": [geo_filter, date_filter, cloud_filter]
+                "config": [geo_filter, date_filter]
         }
 
         # Construct the request.
@@ -116,7 +117,9 @@ if __name__ == "__main__":
     BASEDIR = "/home/diego/work/dev/planet/clientSatAPIs_out/imgs_30072020"
     OUTDIR = "/media/diego/My Book/planet/August2020/imgs_August2020"
 
-
+    assetTypes = ('basic_analytic', 'basic_analytic_udm2', 'ortho_analytic', 'ortho_analytic_udm2',
+            'basic_panchromatic', 'basic_panchromatic_udm2', 'ortho_panchromatic', 'ortho_panchromatic_udm2',
+            'ortho_visual')
     # ******* use planet client api
     #items = quick_search_client(shapesList)
 
@@ -125,35 +128,42 @@ if __name__ == "__main__":
     s = pa.initSession()
     #geoJsons = ut.readJson(os.path.join(BASEDIR, "geoJson.json"))
     geoJsons = quick_search(s, shapesList)
+
+    for idx, geoJson in enumerate(geoJsons):
+        print(f'feature {idx} with length: {pa.getFeaturesLen(geoJson)}')
+
+    pdb.set_trace()
     uniqueFeatures = pa.getUniqueFeatures(geoJsons)
     print(f"{len(uniqueFeatures)} unique images to download")
 
+    for at in assetTypes:
+        while True:
+            skipped = []
+            for block in getFeaturesInBlocks(uniqueFeatures[:], 5):
+                assetsLocations = []
+                for f in block:
+                    print(f"Feature id: {pa.getFeatureId(f)}")
+                    location_url = pa.getAssetLocation(s, f, at)
+                    if location_url:
+                        assetsLocations.append(location_url)
+                    else:
+                        print(f"Could not activate {pa.getFeatureId(f)}, skipping..")
+                        skipped.append(pa.getFeatureId(f))
+                        continue
 
-    while True:
-        skipped = []
-        for block in getFeaturesInBlocks(uniqueFeatures[:], 5):
-            assetsLocations = []
-            for f in block:
-                print(f"Feature id: {pa.getFeatureId(f)}")
-                location_url = pa.getAssetLocation(s, f)
-                if location_url:
-                    assetsLocations.append(location_url)
-                else:
-                    print(f"Could not activate {pa.getFeatureId(f)}, skipping..")
-                    skipped.append(pa.getFeatureId(f))
-                    continue
+                for assetLoc in assetsLocations:
+                    print(assetLoc)
 
-            for assetLoc in assetsLocations:
-                print(assetLoc)
+                for assetLoc in assetsLocations:
+                    pa.downloadAsset(assetLoc, OUTDIR)
 
-            for assetLoc in assetsLocations:
-                pa.downloadAsset(assetLoc, OUTDIR)
-
-        print(skipped)
-        print(f"{len(skipped)} images not downloaded..try again..")
-        if skipped:
-            uniqueFeatures = pa.getSelectedFeatures(geoJsons, skipped)
-        else:
-            break
-            print('all done')
+            print(skipped)
+            print(f"{len(skipped)} images not downloaded..try again..")
+            if skipped:
+                uniqueFeatures = pa.getSelectedFeatures(geoJsons, skipped)
+            else:
+                break
+            print(f'All files donwloaded for asset: {at}')
+            print('')
+    print('All done')
 
