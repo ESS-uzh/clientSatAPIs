@@ -117,19 +117,17 @@ def getActiveAssetUrl(s, assetsUrl, assetType):
     return assets[assetType]["location"]
 
 
-def getAssetLocation(s, feature):
+def getAssetLocation(s, feature, assetType):
     # get asset url
     assetsUrl = getAssetUrl(feature)
     assets = getAssets(s, assetsUrl)
-    
-    # choose ortho_visual type and get its url
-    activationUrl = getActivationUrl(assets['ortho_visual'])
-    
+    # choose  assetType and get its url
+    activationUrl = getActivationUrl(assets[assetType])
     # activate asset
     res = activateAsset(s, activationUrl)
 
     # get asset url location
-    return getActiveAssetUrl(s, assetsUrl, "ortho_visual")
+    return getActiveAssetUrl(s, assetsUrl, assetType)
 
 
 def downloadAsset(assetLocationUrl, outdir, filename=None):
