@@ -3,6 +3,8 @@ import requests
 import time
 import os
 
+import clientSatAPIs.utils as ut
+
 import pdb
 
 # * Client code to interact with the Planet API * #
@@ -16,23 +18,6 @@ quick_url = "{}/quick-search".format(URL)
 # Specify the sensors/satellites or "item types" to include in our results
 item_types = ["SkySatScene", "SkySatCollect"]
 
-def initSession():
-    """
-    Open session with Planet API
-    """
-    # Setup the API Key from the `PL_API_KEY` environment variable
-    PLANET_API_KEY = os.getenv('PL_API_KEY')
-    if PLANET_API_KEY:
-        # Setup the session
-        session = requests.Session()
-        # Authenticate
-        session.auth = (PLANET_API_KEY, "")
-        return session
-    raise Exception("No api key found. Please check for PL_API_KEY "
-                    "env variable on your system. "
-                    "\n"
-                    "To export it: "
-                    "export PL_API_KEY='YOUR API KEY HERE'")
 # -- Assets related
 
 def getFeatureAssets(s, assetsUrl):
@@ -96,22 +81,22 @@ def _backoff(s, url):
 
 def getActiveAssetUrl(s, assetsUrl, assetType):
     assetActivated = False
-    count = 0
+    count = 1
     while assetActivated == False:
-        if count > 24:
-            return
         res = getFeatureAssets(s, assetsUrl)
         assets = res.json()
 
         assetStatus = assets[assetType]["status"]
 
-		# If asset is already active, we are done
+	# If asset is already active, we are done
         if assetStatus == 'active':
             assetActivated = True
             print("Asset is active and ready to download")
         else:
-            print("Not yet activated, sleeping for five seconds..")
-            time.sleep(5)
+            if count > 3:
+                return
+            print("Not yet activated, sleeping for two seconds..")
+            time.sleep(2)
             count += 1
 
     return assets[assetType]["location"]
@@ -152,12 +137,29 @@ def downloadAsset(assetLocationUrl, outdir, filename=None):
     return fpath
 
 
-
-
 # -- Parse Features of a  quick-search response -
+
+def getFileId(fname):
+    """
+    Extract the id from a filename
+    """
+    return '_'.join(fname.split('_')[:4])
 
 
 def getUniqueFeatures(geoJsons):
+    """
+    Compute list of features with unique featureId
+    
+    Params
+    ----------
+
+    geoJsons : list
+               multiple quick-search dict resposes
+    Returns:
+    ----------
+    A list of unique features         
+         
+    """
     finalFeaturesIds = []
     finalFeatures = []
     for item in geoJsons:
@@ -169,20 +171,62 @@ def getUniqueFeatures(geoJsons):
             finalFeatures.append(f)
     return finalFeatures
 
-def getSelectedFeatures(geoJsons, featuresIds):
-    finalFeatures = []
-    for item in geoJsons:
-        for f in getFeatures(item):
-            count = 0
-            while count < len(featuresIds):
-                if getFeatureId(f) == featuresIds[count]:
-                    print(f"found matching feature {getFeatureId(f)}")
-                    finalFeatures.append(f)
-                    count += 1
-                else:
-                    count +=1
-                    continue
-    return finalFeatures
+
+def getFeaturesToDownload(uniqueFeatures, dirpath, pattern):
+    """
+    Compute features that were not downloaded
+    
+    Params
+    ----------
+
+    uniqueFeatures : list
+                     total features 
+    dirpath : string
+              full path to directory of downloaded images
+
+    pattern : string
+              grab all files containing a string, e.g. *analytic*  
+    
+
+    Returns:
+    ----------
+    A list of features to download            
+         
+    """
+    
+    featuresToDownload = [] 
+    idsDownloaded = [getFileId(f) for f in ut.getFiles(dirpath, pattern)]
+    idsTotal = [getFeatureId(feature) for feature in uniqueFeatures]
+    idsToDownload = ut.diff(idsTotal, idsDownloaded)
+    
+    for feature in uniqueFeatures:
+        if getFeatureId(feature) in idsToDownload:
+            print(f"feature id: {getFeatureId(feature)} to download..")
+            featuresToDownload.append(feature)
+    return featuresToDownload
+    
+
+def getUniqueAcquisitionDates(uniqueFeatures):
+    """
+    Extract unique dates of acquisition for a given list of features
+    
+    Params
+    ----------
+
+    uniqueFeatures : list
+                     features 
+
+    Returns:
+    ----------
+    A set of unique dates         
+         
+    """
+    dates = []
+    for feature in uniqueFeatures:
+        _id = getFeatureId(feature)
+        # append a date (first field of _id)
+        dates.append(_id.split("_")[0])
+    return set(dates)
 
 
 def getFeatures(geoJson):
