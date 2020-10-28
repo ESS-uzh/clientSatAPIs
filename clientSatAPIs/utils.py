@@ -1,4 +1,5 @@
 import os
+import fnmatch
 from shapely.geometry import mapping
 import json
 
@@ -34,3 +35,28 @@ def writeJson(obj, outdir, filename):
 def readJson(fpath):
     with open(fpath) as json_file:
         return json.load(json_file)
+
+def diff(total, partial):
+    """
+    Return a diff list: total - partial
+
+    params:
+    ------------
+
+    total : list
+    partial: list
+    """
+    return list(set(total) - set (partial))
+
+
+def getFiles(dirpath, pattern):
+    """
+    Return all files in a dirpath
+    with a file name matching a pattern
+    """
+    files = []
+    # consider first level directory only
+    for f in os.listdir(dirpath):
+        if fnmatch.fnmatch(f, pattern):
+            files.append(f)
+    return files
