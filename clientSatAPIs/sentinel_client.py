@@ -1,126 +1,182 @@
 from datetime import date
 import time
 import zipfile
+import subprocess
+import argparse
+import os
 
-from sentinelsat import SentinelAPI
+import sentinelsat
+
+from typing import Generator, Any, Final
 
 ########################
 
 # Query scihub API for Sentinel2 product
 
-# 1. The query uses tile name and cloud coverage as filters
-# 2. The results are written to a file (OUTFILE)
+# Simple CLI to query, download and correct sentinel2 tiles
 
 ########################
 
 
 # connect to the API
 # A .netrc file with username and password must be present in the home folder
-api = SentinelAPI(None, None, "https://scihub.copernicus.eu/dhus")
-
-OUTFILE = "./sent_client.log"
-TILES = ["*T20QME*", "*T20QNE*"]
+api = sentinelsat.SentinelAPI(None, None, "https://scihub.copernicus.eu/dhus")
 import pdb
 
 
-def _query_by_tile_names(tiles, date=("20150101", "20170101"), cc=(0,5)):
+def _query_by_tile_names(
+    tiles, level="2A", date_range=("20150101", "20170101"), cc=(0, 5)
+) -> None:
     for tl in tiles:
+        # pdb.set_trace()
         products = api.query(
             platformname="Sentinel-2",
-            # processingLevel="Level-2A",
-            date=("20150101", "20170101"),
-            filename=tl,
-            cloudcoverpercentage=(0, 5),
+            processingLevel=f"Level-{level}",
+            date=date_range,
+            filename=f"*{tl}*",
+            cloudcoverpercentage=cc,
         )
-        with open(OUTFILE, "a") as f:
-            f.write(f"Tile: {tl}")
-            f.write("\n")
+        print(f"Tile: {tl}")
+        print("\n")
 
-            for k in products.keys():
-                begin_acquisition_date = products.get(k)["beginposition"].date()
-                date = begin_acquisition_date.strftime("%m/%d/%Y")
-                size = products.get(k)["size"]
-                uuid = products.get(k)["uuid"]
-                f.write(f"{date}, {size}, {uuid}\n")
+        for k in products.keys():
+            begin_acquisition_date = products.get(k)["beginposition"].date()
+            date = begin_acquisition_date.strftime("%m/%d/%Y")
+            size = products.get(k)["size"]
+            uuid = products.get(k)["uuid"]
+            print(f"{date}, {size}, {uuid}\n")
 
-            f.write("\n")
-            f.write("\n")
 
-def _download_by_uuid(products, dirpath):
-
-    for name, uuid in products:
+def _download_by_uuid(tiles, outdir, keep_zip=True) -> None:
+    for name, uuid in tiles:
         time.sleep(5)
-        fzip = '.'.join([name, 'zip'])
-        fzippath = os.path.join(dirpath, fzip)
-        #logger.info(f'Trying tile name: {tile_db.name}, uuid: {tile_db.uuid}')
+        print(f"Trying tile name: {name}, uuid: {uuid}")
         try:
-            products = api.download(uuid, dirpath)
-            print(f'{name} downloaded')
+            products = api.download(uuid, outdir)
+            print(f"{name} downloaded")
         except sentinelsat.exceptions.LTATriggered:
-            print(f'{uuid} not online, skipped..')
+            print(f"{uuid} not online, skipped..")
             continue
         except sentinelsat.exceptions.ServerError:
-            print(f'Got server error..')
+            print(f"Got server error..")
             return
         try:
-            logger.info(f'Try to unzip...')
-            with zipfile.ZipFile(fzippath, 'r') as zip_ref:
-                zip_ref.extractall(dirpath)
+            print(f"Try to unzip...")
+            fzip = ".".join([products["title"], "zip"])
+            fzippath = os.path.join(outdir, fzip)
+            with zipfile.ZipFile(fzippath, "r") as zip_ref:
+                zip_ref.extractall(outdir)
         except zipfile.BadZipFile:
-            tile_db.update_tile_status('corrupted')
-            logger.info(f'update {tile_db.name} as corrupted')
+            print(f"something went wrong with unzipping ..")
             os.remove(fzippath)
             continue
 
-        os.remove(fzippath)
+        if not keep_zip:
+            os.remove(fzippath)
+
 
 def _correct_1c_to_2a(indir):
-    
     # this works only when run on the dcorr server
     my_env = os.environ.copy()
-    my_env['PATH'] = '/home/ubuntu/Sen2Cor-02.08.00-Linux64/bin:' + my_env['PATH']
-    my_env['SEN2COR_HOME'] = '/home/ubuntu/sen2cor/2.8'
-    my_env['SEN2COR_BIN'] = '/home/ubuntu/Sen2Cor-02.08.00-Linux64/lib/python2.7/site-packages/sen2cor'
-    my_env['LC_NUMERIC'] = 'C'
-    my_env['GDAL_DATA'] = '/home/ubuntu/Sen2Cor-02.08.00-Linux64/share/gdal'
-    my_env['GDAL_DRIVER_PATH']= 'disable'
+    my_env["PATH"] = "/home/ubuntu/Sen2Cor-02.08.00-Linux64/bin:" + my_env["PATH"]
+    my_env["SEN2COR_HOME"] = "/home/ubuntu/sen2cor/2.8"
+    my_env[
+        "SEN2COR_BIN"
+    ] = "/home/ubuntu/Sen2Cor-02.08.00-Linux64/lib/python2.7/site-packages/sen2cor"
+    my_env["LC_NUMERIC"] = "C"
+    my_env["GDAL_DATA"] = "/home/ubuntu/Sen2Cor-02.08.00-Linux64/share/gdal"
+    my_env["GDAL_DRIVER_PATH"] = "disable"
 
     # load all tiles fo correction
-
+    fpaths = []
     for f in fpaths:
-        print(f'Start correction for tile {f}')
+        print(f"Start correction for tile {f}")
         # get the full path to tile
         # fpath = os.path.join(full_basedir, tile_db.fname)
 
-        cmd = f'L2A_Process {f}',
+        cmd = (f"L2A_Process {f}",)
 
         try:
             result = subprocess.check_output(cmd, env=my_env, shell=True)
         except subprocess.CalledProcessError as e:
-            logger.error(e.output)
+            print(e.output)
             continue
 
-        print(f'Finished correction for tile {f}')
+        print(f"Finished correction for tile {f}")
 
-        #new_fname = [_dir for _dir in os.listdir(full_basedir) if
+        # new_fname = [_dir for _dir in os.listdir(full_basedir) if
         #    fnmatch.fnmatch(_dir, f'*_MSIL2A_*_{tile_db.name}_*')][0]
 
-def cli():
-    parser = Argparse.ArgumentParser(
-            description = "Search, download and correct sentinel2 products"
-            )
-    subparsers = parser.add_subparsers(required=True)
 
-    # create the parser for the "foo" command
-    parser_query = subparsers.add_parser('query', help="query the scihub database")
-    parser_query.add_argument('-name', type=str, help="name of the tiles")
-    parser_query.add_argument('-date', type=str, help"date range, e.g. yyyyMMdd - yyyyMMdd")
-    #parser_query.set_defaults(func=foo)
+def cli() -> Any:
+    parser: Any = argparse.ArgumentParser(
+        description="Search, download and correct sentinel2 products"
+    )
+    subparsers: Any = parser.add_subparsers(help="Commands", dest="command")
+
+    # create the parser for the "query" command
+    parser_query: Any = subparsers.add_parser("query", help="query the scihub database")
+    parser_query.add_argument(
+        "-n", "--names", type=str, help="Space separated names of the tiles"
+    )
+    parser_query.add_argument(
+        "-d",
+        "--date",
+        type=str,
+        help="Space separated date range in this format, yyyyMMdd yyyyMMdd",
+    )
+    parser_query.add_argument(
+        "-l", "--level", type=str, help="processing level, 2A or 1C"
+    )
+
+    # create the parser for the "download" command
+    parser_download: Any = subparsers.add_parser(
+        "download", help="download and unzip sentinel2 products from scihub"
+    )
+    parser_download.add_argument("-n", "--name", type=str, help="name of the tile")
+    parser_download.add_argument(
+        "-id",
+        "--uuid",
+        type=str,
+        help="uuid of the tile",
+    )
+    parser_download.add_argument(
+        "-d", "--outdir", type=str, help="directory path to download the tile"
+    )
+
+    # create the parser for the "correct" command
+    parser_correct: Any = subparsers.add_parser(
+        "correct", help="atmospheric correction of sentinel2 tiles via sen2corr"
+    )
+    parser_correct.add_argument(
+        "-d", "--indir", type=str, help="directory path containing the tiles to correct"
+    )
+    return parser
 
 
-def main():
+def main() -> None:
     parser = cli()
     args = parser.parse_args()
+
     print(f"args: {args}")
+
+    if args.command == "query":
+        tiles_name = args.names.split()
+        tiles_date = tuple(args.date.split())
+        tiles_level = args.level.split()
+        _query_by_tile_names(tiles_name, tiles_level, tiles_date)
+
+    if args.command == "download":
+        products = []
+        tile_name = args.name
+        tile_uuid = args.uuid
+        products.append((tile_name, tile_uuid))
+        outdir = args.outdir
+        _download_by_uuid(products, outdir)
+
+    if args.command == "correct":
+        indir = args.indir
+        _correct_1c_to_2a(indir)
+
 
 main()
