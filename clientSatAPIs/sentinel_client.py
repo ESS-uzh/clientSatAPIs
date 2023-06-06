@@ -3,11 +3,12 @@ import time
 import zipfile
 import subprocess
 import argparse
+import glob
 import os
 
 import sentinelsat
 
-from typing import Generator, Any, Final
+from typing import Generator, Any
 
 ########################
 
@@ -87,12 +88,11 @@ def _correct_1c_to_2a(indir):
     my_env["GDAL_DATA"] = "/home/ubuntu/Sen2Cor-02.08.00-Linux64/share/gdal"
     my_env["GDAL_DRIVER_PATH"] = "disable"
 
+    pattern = os.path.join(indir, "*.SAFE")
     # load all tiles fo correction
-    fpaths = []
+    fpaths = glob.glob(pattern)
     for f in fpaths:
         print(f"Start correction for tile {f}")
-        # get the full path to tile
-        # fpath = os.path.join(full_basedir, tile_db.fname)
 
         cmd = (f"L2A_Process {f}",)
 
@@ -103,9 +103,6 @@ def _correct_1c_to_2a(indir):
             continue
 
         print(f"Finished correction for tile {f}")
-
-        # new_fname = [_dir for _dir in os.listdir(full_basedir) if
-        #    fnmatch.fnmatch(_dir, f'*_MSIL2A_*_{tile_db.name}_*')][0]
 
 
 def cli() -> Any:
