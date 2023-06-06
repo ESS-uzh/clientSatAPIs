@@ -120,10 +120,13 @@ def cli() -> Any:
         "-d",
         "--date",
         type=str,
-        help="Space separated date range in this format, yyyyMMdd yyyyMMdd",
+        help="Space separated date range in this format, 'yyyyMMdd yyyyMMdd' ",
     )
     parser_query.add_argument(
         "-l", "--level", type=str, help="processing level, 2A or 1C"
+    )
+    parser_query.add_argument(
+        "-c", "--clouds", type=str, help="Space separated cloud range in this format, '0 5' "
     )
 
     # create the parser for the "download" command
@@ -161,7 +164,8 @@ def main() -> None:
         tiles_name = args.names.split()
         tiles_date = tuple(args.date.split())
         tiles_level = args.level.split()
-        _query_by_tile_names(tiles_name, tiles_level, tiles_date)
+        tiles_cloud = tuple(args.clouds.split())
+        _query_by_tile_names(tiles_name, tiles_level, tiles_date, tiles_cloud)
 
     if args.command == "download":
         products = []
